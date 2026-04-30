@@ -1,5 +1,5 @@
 # 📄 PDF Summarizer — NLP-Powered Text Extraction
-🌐 Live App → pdf-summarizer-xdi7.onrender.com
+🌐 Live App → https://pdf-summarizer-xdi7.onrender.com
 
 Extracts text from PDF files and generates concise summaries using **TF-IDF**
 sentence scoring — a classic, robust NLP technique that requires no internet
