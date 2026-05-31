@@ -19,7 +19,6 @@ body, .gradio-container {
     padding: 2rem !important;
 }
 
-/* Title */
 h1 {
     text-align: center !important;
     font-size: 2.8rem !important;
@@ -30,7 +29,6 @@ h1 {
     margin-bottom: 0.5rem !important;
 }
 
-/* Description */
 .description {
     text-align: center !important;
     color: #a0aec0 !important;
@@ -38,7 +36,6 @@ h1 {
     margin-bottom: 2rem !important;
 }
 
-/* Panels */
 .panel, .gr-panel {
     background: rgba(255, 255, 255, 0.05) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -47,7 +44,6 @@ h1 {
     backdrop-filter: blur(10px) !important;
 }
 
-/* Input/Output boxes */
 textarea, input[type="text"] {
     background: rgba(255,255,255,0.07) !important;
     border: 1px solid rgba(255,255,255,0.15) !important;
@@ -57,7 +53,6 @@ textarea, input[type="text"] {
     font-size: 0.95rem !important;
 }
 
-/* Submit button */
 button.primary {
     background: linear-gradient(90deg, #7c3aed, #3b82f6) !important;
     border: none !important;
@@ -75,7 +70,6 @@ button.primary:hover {
     box-shadow: 0 8px 25px rgba(124, 58, 237, 0.6) !important;
 }
 
-/* Clear button */
 button.secondary {
     background: rgba(255,255,255,0.08) !important;
     border: 1px solid rgba(255,255,255,0.2) !important;
@@ -89,33 +83,28 @@ button.secondary:hover {
     background: rgba(255,255,255,0.15) !important;
 }
 
-/* Slider */
 input[type="range"] {
     accent-color: #7c3aed !important;
 }
 
-/* Labels */
 label, .gr-label {
     color: #a78bfa !important;
     font-weight: 500 !important;
     font-size: 0.9rem !important;
 }
 
-/* File upload */
 .gr-file {
     background: rgba(255,255,255,0.05) !important;
     border: 2px dashed rgba(167, 139, 250, 0.4) !important;
     border-radius: 12px !important;
 }
 
-/* Output textbox */
 .gr-textbox {
     font-size: 0.92rem !important;
     line-height: 1.7 !important;
     color: #e2e8f0 !important;
 }
 
-/* Footer */
 footer {
     display: none !important;
 }
@@ -128,7 +117,7 @@ def run_summary(pdf_file, num_sentences):
         text, pages = extract_text(pdf_file.name)
         result = summarize(text, num_sentences=int(num_sentences))
         keywords = " · ".join(result["top_keywords"])
-        output = f"""📄 Pages: {pages}  |  📝 Words: {result['word_count']}  |  📉 Compression: {result['compression']}%
+        output = f"""🌐 Language: {result['language'].upper()}  |  📄 Pages: {pages}  |  📝 Words: {result['word_count']}  |  📉 Compression: {result['compression']}%
 
 ✨ SUMMARY
 {'─' * 60}
@@ -153,9 +142,13 @@ demo = gr.Interface(
     outputs=gr.Textbox(label="✨ Summary Output", lines=20),
     title="📄 PDF Summarizer",
     description="Upload any PDF and get a clean, concise summary powered by TF-IDF NLP.",
-    theme=gr.themes.Soft(),
-    css=custom_css
 )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        theme=gr.themes.Soft(),
+        css=custom_css
+    )
+    

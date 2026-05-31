@@ -9,14 +9,19 @@ import argparse
 import sys
 from collections import Counter
 from pathlib import Path
+from langdetect import detect, DetectorFactory, LangDetectException
+from stopwordsiso import stopwords as iso_stopwords, has_lang
+
+DetectorFactory.seed = 0
+from pathlib import Path
 
 try:
-    import pdfplumber
+    import pdfplumber  
 except ImportError:
     pdfplumber = None
 
 try:
-    from pypdf import PdfReader
+    from pypdf import PdfReader  
 except ImportError:
     PdfReader = None
 
@@ -111,6 +116,19 @@ def extract_text(pdf_path: str) -> tuple[str, int]:
 
 
 # ── NLP Utilities ─────────────────────────────────────────────────────────────
+def detect_language(text: str) -> str:
+    """Detect language from text sample. Falls back to English."""
+    try:
+        return detect(text[:3000])
+    except LangDetectException:
+        return "en"
+
+def get_stopwords(lang_code: str) -> set:
+    """Return stopwords for detected language, falling back to English."""
+    lang_code = lang_code.lower()
+    if has_lang(lang_code):
+        return iso_stopwords(lang_code)
+    return iso_stopwords("en")
 
 def tokenize_sentences(text: str) -> list[str]:
     """Split text into sentences using regex (no NLTK needed)."""
@@ -125,20 +143,18 @@ def tokenize_sentences(text: str) -> list[str]:
     return [s for s in sentences if len(s.split()) >= 4]
 
 
-def tokenize_words(text: str) -> list[str]:
-    """Extract meaningful words, lower-cased, stopwords removed."""
+def tokenize_words(text: str, stop_words: set = None) -> list[str]:
+    if stop_words is None:
+        stop_words = STOPWORDS
     words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-    return [w for w in words if w not in STOPWORDS]
+    return [w for w in words if w not in stop_words]
 
 
-def compute_tfidf_scores(sentences: list[str]) -> dict[int, float]:
-    """
-    Score each sentence using TF-IDF:
-    - TF  = frequency of meaningful words in the sentence
-    - IDF = log(total_sentences / sentences_containing_word)
-    """
+def compute_tfidf_scores(sentences: list[str], stop_words: set = None) -> dict[int, float]:
+    if stop_words is None:
+        stop_words = STOPWORDS
     N = len(sentences)
-    tokenized = [tokenize_words(s) for s in sentences]
+    tokenized = [tokenize_words(s, stop_words) for s in sentences]
 
     # Document frequency (how many sentences contain each word)
     df: Counter = Counter()
@@ -175,40 +191,32 @@ def position_boost(idx: int, total: int) -> float:
 def summarize(text: str,
               num_sentences: int = 5,
               min_word_ratio: float = 0.05) -> dict:
-    """
-    Generate an extractive summary using TF-IDF scoring.
 
-    Returns a dict with:
-      - summary        : the summary text
-      - word_count     : total words in original
-      - sentence_count : total sentences found
-      - compression    : compression ratio (summary / original words)
-      - top_keywords   : top 10 keywords
-    """
+    # ADD THESE TWO LINES
+    lang = detect_language(text)
+    stop_words = get_stopwords(lang)
+
     sentences = tokenize_sentences(text)
     total_sentences = len(sentences)
 
     if total_sentences == 0:
         return {"summary": "No readable text found.", "word_count": 0,
-                "sentence_count": 0, "compression": 0.0, "top_keywords": []}
+                "sentence_count": 0, "compression": 0.0, "top_keywords": [],
+                "language": lang}
 
-    # Clamp num_sentences
     num_sentences = min(num_sentences, total_sentences)
 
-    # Score sentences
-    tfidf_scores = compute_tfidf_scores(sentences)
+    tfidf_scores = compute_tfidf_scores(sentences, stop_words)  # pass stop_words
     final_scores = {
         idx: score * position_boost(idx, total_sentences)
         for idx, score in tfidf_scores.items()
     }
 
-    # Pick top-N, preserving original document order
     top_indices = sorted(
         sorted(final_scores, key=final_scores.get, reverse=True)[:num_sentences]
     )
     summary_sentences = [sentences[i] for i in top_indices]
 
-    # Post-process: ensure each sentence ends with punctuation
     cleaned = []
     for s in summary_sentences:
         s = s.strip()
@@ -218,8 +226,7 @@ def summarize(text: str,
 
     summary = " ".join(cleaned)
 
-    # Stats
-    all_words = tokenize_words(text)
+    all_words = tokenize_words(text, stop_words)  # pass stop_words
     word_freq = Counter(all_words)
     total_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
     summary_words = len(re.findall(r'\b[a-zA-Z]+\b', summary))
@@ -231,6 +238,7 @@ def summarize(text: str,
         "sentence_count": total_sentences,
         "compression": compression,
         "top_keywords": [w for w, _ in word_freq.most_common(10)],
+        "language": lang,  # ADD THIS
     }
 
 
