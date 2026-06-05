@@ -1,5 +1,5 @@
 import gradio as gr
-from summarizer import extract_text, summarize
+from summarizer import extract_text, summarize, answer_question
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
@@ -132,17 +132,51 @@ def run_summary(pdf_file, num_sentences):
         return f"❌ Error: {str(e)}"
 
 
-demo = gr.Interface(
-    fn=run_summary,
-    inputs=[
-        gr.File(label="📂 Upload your PDF", file_types=[".pdf"]),
-        gr.Slider(minimum=3, maximum=10, value=5, step=1,
-                  label="Number of sentences in summary")
-    ],
-    outputs=gr.Textbox(label="✨ Summary Output", lines=20),
-    title="📄 PDF Summarizer",
-    description="Upload any PDF and get a clean, concise summary powered by TF-IDF NLP.",
-)
+def run_qa(pdf_file, question):
+    if pdf_file is None:
+        return "⚠️ Please upload a PDF file."
+    if not question.strip():
+        return "⚠️ Please type a question."
+    try:
+        text, pages = extract_text(pdf_file.name)
+        answers = answer_question(text, question)
+        output = f"🔍 Question: {question}\n\n"
+        output += "─" * 60 + "\n\n"
+        for i, sentence in enumerate(answers, 1):
+            output += f"{i}. {sentence}\n\n"
+        return output
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
+with gr.Blocks(title="PDF Summarizer") as demo:
+    gr.Markdown("# 📄 PDF Summarizer")
+    gr.Markdown("Upload any PDF to summarise it or ask questions about it.")
+
+    with gr.Tabs():
+        with gr.Tab("✨ Summarise"):
+            with gr.Row():
+                with gr.Column():
+                    pdf_input_sum = gr.File(label="📂 Upload your PDF", file_types=[".pdf"])
+                    slider = gr.Slider(minimum=3, maximum=10, value=5, step=1,
+                                       label="Number of sentences in summary")
+                    sum_btn = gr.Button("Summarise", variant="primary")
+                with gr.Column():
+                    sum_output = gr.Textbox(label="✨ Summary Output", lines=20)
+            sum_btn.click(fn=run_summary, inputs=[pdf_input_sum, slider], outputs=sum_output)
+
+        with gr.Tab("❓ Ask a Question"):
+            with gr.Row():
+                with gr.Column():
+                    pdf_input_qa = gr.File(label="📂 Upload your PDF", file_types=[".pdf"])
+                    question_input = gr.Textbox(
+                        label="Your question",
+                        placeholder="e.g. What are the main conclusions?"
+                    )
+                    qa_btn = gr.Button("Ask", variant="primary")
+                with gr.Column():
+                    qa_output = gr.Textbox(label="📖 Answer", lines=20)
+            qa_btn.click(fn=run_qa, inputs=[pdf_input_qa, question_input], outputs=qa_output)
 
 if __name__ == "__main__":
     demo.launch(
@@ -151,4 +185,3 @@ if __name__ == "__main__":
         theme=gr.themes.Soft(),
         css=custom_css
     )
-    

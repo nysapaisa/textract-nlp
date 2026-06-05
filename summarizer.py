@@ -13,15 +13,14 @@ from langdetect import detect, DetectorFactory, LangDetectException
 from stopwordsiso import stopwords as iso_stopwords, has_lang
 
 DetectorFactory.seed = 0
-from pathlib import Path
 
 try:
-    import pdfplumber  
+    import pdfplumber
 except ImportError:
     pdfplumber = None
 
 try:
-    from pypdf import PdfReader  
+    from pypdf import PdfReader
 except ImportError:
     PdfReader = None
 
@@ -116,12 +115,14 @@ def extract_text(pdf_path: str) -> tuple[str, int]:
 
 
 # ── NLP Utilities ─────────────────────────────────────────────────────────────
+
 def detect_language(text: str) -> str:
     """Detect language from text sample. Falls back to English."""
     try:
         return detect(text[:3000])
     except LangDetectException:
         return "en"
+
 
 def get_stopwords(lang_code: str) -> set:
     """Return stopwords for detected language, falling back to English."""
@@ -130,16 +131,13 @@ def get_stopwords(lang_code: str) -> set:
         return iso_stopwords(lang_code)
     return iso_stopwords("en")
 
+
 def tokenize_sentences(text: str) -> list[str]:
     """Split text into sentences using regex (no NLTK needed)."""
-    # Handle common abbreviations so they don't break sentence splitting
     text = re.sub(r'\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc|e\.g|i\.e)\.',
                   r'\1<DOT>', text)
-    # Split on sentence-ending punctuation
     raw = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-    # Restore abbreviation dots
     sentences = [s.replace('<DOT>', '.').strip() for s in raw]
-    # Remove very short fragments
     return [s for s in sentences if len(s.split()) >= 4]
 
 
@@ -156,7 +154,6 @@ def compute_tfidf_scores(sentences: list[str], stop_words: set = None) -> dict[i
     N = len(sentences)
     tokenized = [tokenize_words(s, stop_words) for s in sentences]
 
-    # Document frequency (how many sentences contain each word)
     df: Counter = Counter()
     for tokens in tokenized:
         df.update(set(tokens))
@@ -169,7 +166,7 @@ def compute_tfidf_scores(sentences: list[str], stop_words: set = None) -> dict[i
         tf = Counter(tokens)
         score = 0.0
         for word, count in tf.items():
-            idf = math.log((N + 1) / (df[word] + 1)) + 1  # smoothed
+            idf = math.log((N + 1) / (df[word] + 1)) + 1
             score += (count / len(tokens)) * idf
         scores[idx] = score
 
@@ -179,11 +176,76 @@ def compute_tfidf_scores(sentences: list[str], stop_words: set = None) -> dict[i
 def position_boost(idx: int, total: int) -> float:
     """Boost sentences near the beginning and end of the document."""
     rel = idx / max(total - 1, 1)
-    if rel <= 0.15:   # first ~15%
+    if rel <= 0.15:
         return 1.25
-    if rel >= 0.85:   # last ~15%
+    if rel >= 0.85:
         return 1.10
     return 1.0
+
+
+# ── Q&A ───────────────────────────────────────────────────────────────────────
+
+def answer_question(text: str, question: str, top_n: int = 4) -> list[str]:
+    """
+    Find the most relevant sentences in the PDF for a given question.
+    Uses cosine similarity between question vector and sentence vectors.
+    """
+    lang = detect_language(text)
+    stop_words = get_stopwords(lang)
+
+    sentences = tokenize_sentences(text)
+    if not sentences:
+        return ["No readable text found."]
+
+    question_tokens = tokenize_words(question, stop_words)
+    if not question_tokens:
+        return ["Question too vague — try using more specific words."]
+
+    # Build vocabulary from sentences + question together for IDF
+    all_docs = sentences + [question]
+    N = len(all_docs)
+    tokenized = [tokenize_words(s, stop_words) for s in all_docs]
+
+    df: Counter = Counter()
+    for tokens in tokenized:
+        df.update(set(tokens))
+
+    def get_vector(tokens):
+        tf = Counter(tokens)
+        vec = {}
+        for word, count in tf.items():
+            idf = math.log((N + 1) / (df[word] + 1)) + 1
+            vec[word] = (count / len(tokens)) * idf
+        return vec
+
+    def cosine_similarity(vec_a, vec_b):
+        common = set(vec_a) & set(vec_b)
+        if not common:
+            return 0.0
+        dot = sum(vec_a[w] * vec_b[w] for w in common)
+        mag_a = math.sqrt(sum(v ** 2 for v in vec_a.values()))
+        mag_b = math.sqrt(sum(v ** 2 for v in vec_b.values()))
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+        return dot / (mag_a * mag_b)
+
+    question_vec = get_vector(question_tokens)
+
+    scored = []
+    for i, tokens in enumerate(tokenized[:-1]):  # exclude question itself
+        if not tokens:
+            continue
+        sent_vec = get_vector(tokens)
+        score = cosine_similarity(question_vec, sent_vec)
+        scored.append((score, sentences[i]))
+
+    top = sorted(scored, reverse=True)[:top_n]
+    top_sentences = [s for score, s in top if score > 0]
+
+    if not top_sentences:
+        return ["No relevant answer found in the document."]
+
+    return top_sentences
 
 
 # ── Summarization ─────────────────────────────────────────────────────────────
@@ -192,7 +254,6 @@ def summarize(text: str,
               num_sentences: int = 5,
               min_word_ratio: float = 0.05) -> dict:
 
-    # ADD THESE TWO LINES
     lang = detect_language(text)
     stop_words = get_stopwords(lang)
 
@@ -206,7 +267,7 @@ def summarize(text: str,
 
     num_sentences = min(num_sentences, total_sentences)
 
-    tfidf_scores = compute_tfidf_scores(sentences, stop_words)  # pass stop_words
+    tfidf_scores = compute_tfidf_scores(sentences, stop_words)
     final_scores = {
         idx: score * position_boost(idx, total_sentences)
         for idx, score in tfidf_scores.items()
@@ -226,7 +287,7 @@ def summarize(text: str,
 
     summary = " ".join(cleaned)
 
-    all_words = tokenize_words(text, stop_words)  # pass stop_words
+    all_words = tokenize_words(text, stop_words)
     word_freq = Counter(all_words)
     total_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
     summary_words = len(re.findall(r'\b[a-zA-Z]+\b', summary))
@@ -238,7 +299,7 @@ def summarize(text: str,
         "sentence_count": total_sentences,
         "compression": compression,
         "top_keywords": [w for w, _ in word_freq.most_common(10)],
-        "language": lang,  # ADD THIS
+        "language": lang,
     }
 
 
@@ -302,22 +363,18 @@ Examples:
     print_banner()
     print(f"\n⏳ Processing: {args.pdf}")
 
-    # 1. Extract
     try:
         text, pages = extract_text(args.pdf)
     except RuntimeError as e:
         print(f"\n❌ Extraction failed: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 2. Summarize
     print(f"  ✓ Running TF-IDF summarization ({args.sentences} sentences)…")
     result = summarize(text, num_sentences=args.sentences)
 
-    # 3. Display
     output = format_output(args.pdf, pages, result)
     print("\n" + output)
 
-    # 4. Optionally save
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
         print(f"\n💾 Summary saved to: {args.output}")
