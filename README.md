@@ -1,9 +1,7 @@
-# 📄 PDF Summarizer — NLP-Powered Text Extraction
+# 📄 Textract-NLP — NLP-Powered PDF Summarizer
 🌐 Live App → https://pdf-summarizer-xdi7.onrender.com
 
-Extracts text from PDF files and generates concise summaries using **TF-IDF**
-sentence scoring — a classic, robust NLP technique that requires no internet
-access and no large model downloads.
+Extracts text from PDF files and generates concise, diverse summaries using **TF-IDF** sentence scoring combined with **MMR (Maximal Marginal Relevance)** a classic, robust NLP technique which requires no internet access and no large model downloads.
 
 ---
 
@@ -13,11 +11,15 @@ access and no large model downloads.
 |---|---|
 | **PDF extraction** | pdfplumber (primary) → pypdf (fallback) |
 | **Summarization** | Extractive TF-IDF with position boosting |
+| **Redundancy filter** | MMR algorithm removes near-duplicate sentences |
+| **Q&A mode** | Ask questions about your PDF, get relevant answers |
+| **Multi-language** | Auto-detects language, applies correct stopwords |
 | **Keyword extraction** | Top-10 meaningful terms |
 | **Compression ratio** | Shows how much shorter the summary is |
 | **Batch mode** | Summarize every PDF in a folder at once |
 | **Save output** | Optionally write summary to a `.txt` file |
 | **Zero downloads** | No NLTK/spaCy corpora required |
+| **Web UI** | Clean Gradio interface for non-technical users |
 
 ---
 
@@ -48,7 +50,12 @@ python summarizer.py report.pdf --output summary.txt
 python batch_summarize.py ./pdfs/ --sentences 5 --output-dir ./summaries/
 ```
 
-### 6. Run tests
+### 6. Launch the web UI
+```bash
+python app.py
+```
+
+### 7. Run tests
 ```bash
 python tests.py
 ```
@@ -57,33 +64,36 @@ python tests.py
 
 ## How It Works
 
-```
 PDF File
-   │
-   ▼
+│
+▼
 ┌──────────────────────────┐
 │  Text Extraction Layer   │  pdfplumber → pypdf (fallback)
 └──────────────────────────┘
-   │  raw text
-   ▼
+│  raw text
+▼
+┌──────────────────────────┐
+│  Language Detection      │  langdetect → locale stopwords
+└──────────────────────────┘
+│  detected language
+▼
 ┌──────────────────────────┐
 │  Sentence Tokenization   │  Regex-based, handles abbreviations
 └──────────────────────────┘
-   │  sentence list
-   ▼
+│  sentence list
+▼
 ┌──────────────────────────┐
 │   TF-IDF Sentence Scorer │  Measures importance of each sentence
 │   + Position Boosting    │  Boosts intro/conclusion sentences
 └──────────────────────────┘
-   │  ranked sentences
-   ▼
+│  ranked sentences
+▼
 ┌──────────────────────────┐
-│  Top-N Selection         │  Preserves original reading order
+│  MMR Redundancy Filter   │  Removes near-duplicate sentences
 └──────────────────────────┘
-   │
-   ▼
-Summary + Keywords + Stats
-```
+│
+▼
+Summary + Keywords + Stats + Language
 
 ### TF-IDF scoring
 
@@ -93,28 +103,46 @@ For each sentence:
 - **Score** = sum of `(TF × IDF)` for every word in the sentence
 - **Position boost**: ×1.25 for sentences in the first 15%, ×1.10 for the last 15%
 
-Sentences are then ranked by score and the top-N are returned in their
-original order to form a coherent summary.
+### MMR Redundancy Filter
+
+After scoring, MMR selects sentences that are both **relevant** and **diverse**:
+- First pick: highest TF-IDF scoring sentence
+- Each subsequent pick: highest scoring sentence that is sufficiently different from already selected sentences
+- Prevents repetitive summaries on documents with repeated phrasing
+
+### Q&A Mode
+
+Uses cosine similarity between a TF-IDF vector of the question and each sentence in the document to find the most relevant answers — no LLM required.
+
+### Multi-language Support
+
+Automatically detects the document language using `langdetect` and loads the appropriate stopword list via `stopwordsiso`. Supports 40+ languages including French, Spanish, German, Arabic, Hindi, and more.
 
 ---
 
 ## Project Structure
-
-```
-pdf_summarizer/
-├── summarizer.py       # Core logic + CLI entry point
+textract-nlp/
+├── summarizer.py       # Core NLP logic + CLI entry point
+├── app.py              # Gradio web UI
 ├── batch_summarize.py  # Batch-processing utility
 ├── tests.py            # Unit test suite
 ├── requirements.txt    # Python dependencies
 └── README.md           # This file
-```
+
+---
+
+## Requirements
+pdfplumber
+pypdf
+langdetect
+stopwordsiso
+gradio
 
 ---
 
 ## Limitations
 
-- **Scanned PDFs** (image-only) produce no extractable text — use an OCR tool
-  (e.g. `tesseract`) to pre-process them first.
-- **Extractive** summarization: the summary is composed of actual sentences
-  from the document, not newly generated text.
+- **Scanned PDFs** (image-only) produce no extractable text — use an OCR tool (e.g. `tesseract`) to pre-process them first.
+- **Extractive** summarization: the summary is composed of actual sentences from the document, not newly generated text.
 - Very short documents (< 5 sentences) may yield thin summaries.
+- CJK languages (Chinese, Japanese, Korean) use character-level tokenization which may affect summary quality.
