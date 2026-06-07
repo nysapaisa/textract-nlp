@@ -183,6 +183,59 @@ def position_boost(idx: int, total: int) -> float:
     return 1.0
 
 
+# ── MMR Redundancy Filter ─────────────────────────────────────────────────────
+
+def mmr_filter(sentences: list[str], scores: dict[int, float],
+               stop_words: set, top_n: int, diversity: float = 0.5) -> list[int]:
+    """
+    Maximal Marginal Relevance — picks top_n sentences that are
+    both relevant (high TF-IDF score) and diverse (not too similar
+    to already selected sentences).
+
+    diversity: 0.0 = pure relevance, 1.0 = pure diversity
+    """
+    def get_vector(tokens):
+        tf = Counter(tokens)
+        total = len(tokens)
+        return {w: c / total for w, c in tf.items()}
+
+    def cosine_similarity(vec_a, vec_b):
+        common = set(vec_a) & set(vec_b)
+        if not common:
+            return 0.0
+        dot = sum(vec_a[w] * vec_b[w] for w in common)
+        mag_a = math.sqrt(sum(v ** 2 for v in vec_a.values()))
+        mag_b = math.sqrt(sum(v ** 2 for v in vec_b.values()))
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+        return dot / (mag_a * mag_b)
+
+    tokenized = {i: tokenize_words(s, stop_words) for i, s in enumerate(sentences)}
+    vectors = {i: get_vector(t) for i, t in tokenized.items() if t}
+
+    candidates = list(vectors.keys())
+    selected = []
+
+    while len(selected) < top_n and candidates:
+        if not selected:
+            best = max(candidates, key=lambda i: scores.get(i, 0))
+        else:
+            def mmr_score(i):
+                relevance = scores.get(i, 0)
+                max_sim = max(
+                    cosine_similarity(vectors[i], vectors[j])
+                    for j in selected if j in vectors
+                )
+                return (1 - diversity) * relevance - diversity * max_sim
+
+            best = max(candidates, key=mmr_score)
+
+        selected.append(best)
+        candidates.remove(best)
+
+    return sorted(selected)
+
+
 # ── Q&A ───────────────────────────────────────────────────────────────────────
 
 def answer_question(text: str, question: str, top_n: int = 4) -> list[str]:
@@ -201,7 +254,6 @@ def answer_question(text: str, question: str, top_n: int = 4) -> list[str]:
     if not question_tokens:
         return ["Question too vague — try using more specific words."]
 
-    # Build vocabulary from sentences + question together for IDF
     all_docs = sentences + [question]
     N = len(all_docs)
     tokenized = [tokenize_words(s, stop_words) for s in all_docs]
@@ -232,7 +284,7 @@ def answer_question(text: str, question: str, top_n: int = 4) -> list[str]:
     question_vec = get_vector(question_tokens)
 
     scored = []
-    for i, tokens in enumerate(tokenized[:-1]):  # exclude question itself
+    for i, tokens in enumerate(tokenized[:-1]):
         if not tokens:
             continue
         sent_vec = get_vector(tokens)
@@ -273,9 +325,9 @@ def summarize(text: str,
         for idx, score in tfidf_scores.items()
     }
 
-    top_indices = sorted(
-        sorted(final_scores, key=final_scores.get, reverse=True)[:num_sentences]
-    )
+    # Use MMR to pick diverse, relevant sentences
+    top_indices = mmr_filter(sentences, final_scores, stop_words, num_sentences)
+
     summary_sentences = [sentences[i] for i in top_indices]
 
     cleaned = []
