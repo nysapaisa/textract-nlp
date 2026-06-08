@@ -1,5 +1,5 @@
 import gradio as gr
-from summarizer import extract_text, summarize, answer_question
+from summarizer import extract_text, summarize, answer_question, generate_wordcloud
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
@@ -149,9 +149,20 @@ def run_qa(pdf_file, question):
         return f"❌ Error: {str(e)}"
 
 
+def run_wordcloud(pdf_file):
+    if pdf_file is None:
+        return None
+    try:
+        text, pages = extract_text(pdf_file.name)
+        img = generate_wordcloud(text)
+        return img
+    except Exception as e:
+        raise gr.Error(f"Error: {str(e)}")
+
+
 with gr.Blocks(title="PDF Summarizer") as demo:
     gr.Markdown("# 📄 PDF Summarizer")
-    gr.Markdown("Upload any PDF to summarise it or ask questions about it.")
+    gr.Markdown("Upload any PDF to summarise it, ask questions, or visualise its keywords.")
 
     with gr.Tabs():
         with gr.Tab("✨ Summarise"):
@@ -177,6 +188,15 @@ with gr.Blocks(title="PDF Summarizer") as demo:
                 with gr.Column():
                     qa_output = gr.Textbox(label="📖 Answer", lines=20)
             qa_btn.click(fn=run_qa, inputs=[pdf_input_qa, question_input], outputs=qa_output)
+
+        with gr.Tab("☁️ Word Cloud"):
+            with gr.Row():
+                with gr.Column():
+                    pdf_input_wc = gr.File(label="📂 Upload your PDF", file_types=[".pdf"])
+                    wc_btn = gr.Button("Generate", variant="primary")
+                with gr.Column():
+                    wc_output = gr.Image(label="🔑 Word Cloud", type="pil")
+            wc_btn.click(fn=run_wordcloud, inputs=[pdf_input_wc], outputs=wc_output)
 
 if __name__ == "__main__":
     demo.launch(

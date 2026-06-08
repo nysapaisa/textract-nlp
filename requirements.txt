@@ -1,4 +1,5 @@
-pdfplumber>=0.10.0
-pypdf>=4.0.0
+pdfplumber
+pypdf
+langdetect
+stopwordsiso
 gradio
-gunicorn

@@ -354,6 +354,38 @@ def summarize(text: str,
         "language": lang,
     }
 
+def generate_wordcloud(text: str, stop_words: set = None) -> "Image":
+    """Generate a word cloud image from the PDF text."""
+    from wordcloud import WordCloud
+    import matplotlib.pyplot as plt
+    from io import BytesIO
+    from PIL import Image as PILImage
+    import numpy as np
+
+    if stop_words is None:
+        lang = detect_language(text)
+        stop_words = get_stopwords(lang)
+
+    wordcloud = WordCloud(
+        width=900,
+        height=450,
+        background_color="white",
+        stopwords=stop_words,
+        colormap="plasma",
+        max_words=80,
+        collocations=False,
+    ).generate(text)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(wordcloud, interpolation="bilinear")
+    ax.axis("off")
+    plt.tight_layout(pad=0)
+
+    buf = BytesIO()
+    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return PILImage.open(buf)
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
